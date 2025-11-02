@@ -1,0 +1,189 @@
+---
+title: "DS501 - Association Rules"
+author: "Mina Fahmy"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+always_allow_html: true
+---
+
+### Load packages for Association Rules
+
+We will utilize purchase data from one month of operation at a grocery store. The data contain 9,835 transactions, or about 328
+transactions per day. If we remove brands and just consider product type, it will give total 169 items. Any guesses about which types of items might be purchased together? Will wine and cheese be a common pairing? Bread and butter? Milk and eggs? Let's dig into this data and see if we can confirm our guesses.
+
+```{r, message=FALSE}
+library(arules)
+library(arulesViz)
+library(colorspace)
+library(plotly)
+data(Groceries)
+groceries = as(Groceries, 'data.frame')
+Groceries
+head(groceries)
+```
+
+Let us find the items most commonly found in transactional data
+```{r}
+summary(Groceries)
+```
+
+### Observations
+* Density, 0.026 means 2.6% are non zero matrix cells
+* Matrix has  9835 times 169, i.e.  1662115 cells. Hence 9835 times 169 times 0.02609146, so 43367 items were purchased
+* Whole milk appeared 2513 times out of 9835 transactions, means `r round(2513/9835, 2)` percent of transactions. 
+* Average transaction contained `43367/9835` = `r 43367/9835` items
+* A total of 2,159 transactions contained only a single item, while one transaction had 32 items. 
+* The first quartile and median purchase size are 2 and 3 items respectively, implying that 25 percent of transactions 
+contained two or fewer items and about half contained around three items. 
+* The mean of 4.409 matches the value we calculated manually.
+
+### Find item frequency
+```{r}
+itemFrequency(Groceries[,1:5])
+```
+
+### Visualize item support - item frequency plots
+```{r}
+itemFrequencyPlot(Groceries, support=0.1)
+itemFrequencyPlot(Groceries, support=0.05)
+itemFrequencyPlot(Groceries, topN=20)
+```
+
+### Visualizing first five transaction data
+```{r}
+image(Groceries[1:5])
+```
+
+### Visualizing random 100 transactions
+```{r}
+image(sample(Groceries, 100))
+```
+
+### Implementation of Apriori algorithm
+We will implement apriori algorithm to find the associations among shopping cart items
+```{r}
+apriori(Groceries)
+```
+
+* With the default of `support` is 0.1, an item must have appeared atleast `0.1*9385`=`938` transactions. Only 8 items appeared those many times, so no rules were generated
+
+#### Support
+* To set a `support` by thinking the minimum number of transactions we would need 
+* For an example, if an item is purchased three times a day (about 90 times) then it may be worth taking a look at. 
+* Then support will be 90 out of 9835 transactions, i.e. 0.009
+
+#### Confidence
+* We will set a `confidence` threshold of 0.25, which means that in order to be
+included in the results, the rule has to be correct at least 25 percent of the time. 
+* This will eliminate the most unreliable rules while allowing some room for us to modify
+behavior with targeted promotions.
+
+In addition, We also set `minlen` = 2 to eliminate rules that contain fewer than
+two items.  
+
+### New apriori algorithm
+```{r}
+grules = apriori(Groceries, parameter = list(support = 0.009, confidence = 0.25, minlen = 2))
+grules
+```
+
+### Evaluating performance
+```{r}
+summary(grules)
+```
+
+* We should be careful if most of the rules are very near to the thresholds we set
+
+### Take a look at some rules
+```{r}
+inspect(grules[1:10])
+```
+
+### Understanding association rules
+A common approach is to take the result of learning association rules and divide them into three categories
+
+* **Actionable** - The goal of a market basket analysis is to find actionable associations, or
+rules that provide a clear and useful insight. Some rules are clear, others are useful; it
+is less common to find a combination of both of these factors.
+* **Trivial** - Any rules that are so obvious that they are not worth
+mentioning, they are clear, but not useful. 
+* **Inexplicable** - If the connection between the items is so unclear that figuring
+out how to use the information for action would require additional research.
+
+### Deeper look - sorting the set of association rules
+```{r}
+inspect(sort(grules, by = "lift")[1:10])
+```
+
+* The first rule, with a lift of 3.796886, implies that people who buy berries are nearly four
+times more likely to buy whipped/sour cream than the typical customer
+
+### Subset of association rules
+```{r}
+beefrules = subset(grules, items %in% c("beef","sausage"))
+inspect(sort(beefrules, by = "lift")[1:10])
+```
+
+The `subset()` function can be used with several keywords and operators:
+
+* The keyword `items`, matches an item appearing anywhere in the rule. 
+* Limit the subset with `lhs` and `rhs` instead.
+* The operator `%in%` means that at least one of the items must be found in the list you defined. 
+* For partial matching (`%pin%`) and complete matching (`%ain%`). 
+* We can also filter by `support`, `confidence`, or `lift`.
+* We can also combine standard R logical operators such as and (`&`), or (`|`), and not (`!`).
+
+### Association rules - Scatter Plot
+```{r}
+plot(grules)
+plot(grules, measure=c("support", "lift"), shading="confidence")
+```
+
+### Shading by order (number of items contained in the rule)
+```{r}
+plot(grules, shading="order", control=list(main = "Two-key plot"))
+```
+
+### Interactive Scatter Plot
+```{r, eval=FALSE}
+plot(grules, measure=c("support", "lift"), shading="confidence", engine = 'htmlwidget')
+```
+
+### Matrix based visulaization
+```{r}
+plot(beefrules, method="matrix", measure="lift")
+plot(beefrules, method="matrix", measure="lift", control=list(verbose = TRUE), engine = 'htmlwidget')
+plot(beefrules, method="matrix", measure=c("lift", "confidence"), control=list(verbose = TRUE, col=sequential_hcl(200)), engine = 'htmlwidget')
+plot(beefrules, method="matrix", measure=c("support","confidence"), control=list(verbose =TRUE, col=sequential_hcl(200)), engine = 'htmlwidget')
+```
+
+### Grouped Matrix based visualization
+```{r}
+plot(beefrules, method="grouped", measure="support", control=list(col=sequential_hcl(100)))
+plot(beefrules, method="grouped", measure="confidence", control=list(col=sequential_hcl(100)))
+```
+
+### Graph based visualizations
+```{r}
+plot(beefrules, method="graph", control=list(type="items"), engine = 'htmlwidget')
+```
+
+### Parallel coordinates plot
+```{r}
+plot(beefrules, method="paracoord", control=list(verbose=TRUE))
+```
+
+### Saving Association rules
+```{r, eval=FALSE}
+write(grules, file = "grules.csv", sep = ",", quote = TRUE, row.names = FALSE)
+```
+
+### Summary
+
+- Association rules are one of the simple solutions for Big Data problems. 
+- Unsupervised learning algorithm to identify patterns without any prior knowledge of patterns
+- Apriori algorithm reduces the wealth of information by setting up thresholds 
+- Association rule algorithms typically generate a large number of association rules which poses a major problem for understanding and analyzing rules, visualization and filtering techniques will help
